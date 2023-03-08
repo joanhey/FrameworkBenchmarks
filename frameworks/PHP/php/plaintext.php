@@ -1,4 +1,5 @@
 <?php
+
 // Set content type
 header('Content-Type: text/plain');
 
