@@ -143,7 +143,7 @@ jobs:
         uses: mattes/cached-docker-build-action@v1
         with:
           args: " --file ./Dockerfile --tag techempower/tfb ."
-          cache_key: "${{ hashFiles('./toolset/run-tests.py') }}-${{ hashFiles('./toolset/benchmark/*') }}"
+          cache_key: "${{ hashFiles('toolset/run-tests.py') }}-${{ hashFiles('toolset/benchmark/*') }}"
       - name: Stop services
         # Stop services that would claim ports we may need
         run: |
