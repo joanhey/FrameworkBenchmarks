@@ -1,7 +1,7 @@
-import os
 import multiprocessing
+import os
+import platform
 
-import asyncpg
 from aiohttp import web
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -20,6 +20,15 @@ from .views import (
     updates_raw,
 )
 
+if platform.python_implementation() != "PyPy":
+    import asyncpg
+
+    class NoResetConnection(asyncpg.Connection):
+        __slots__ = ()
+    
+        def get_reset_query(self):
+            return ""
+
 CONNECTION_ORM = os.getenv('CONNECTION', 'ORM').upper() == 'ORM'
 
 
@@ -37,7 +46,6 @@ def pg_dsn(dialect=None) -> str:
     )
     return url.render_as_string(hide_password=False)
 
-
 async def db_ctx(app: web.Application):
     # number of gunicorn workers = multiprocessing.cpu_count() as per gunicorn_conf.py
     # max_connections = 2000 as per toolset/setup/linux/databases/postgresql/postgresql.conf:64
@@ -52,7 +60,7 @@ async def db_ctx(app: web.Application):
         app['db_session'] = async_sessionmaker(engine)
     else:
         dsn = pg_dsn()
-        app['pg'] = await asyncpg.create_pool(dsn=dsn, min_size=min_size, max_size=max_size, loop=app.loop)
+        app['pg'] = await asyncpg.create_pool(dsn=dsn, min_size=min_size, max_size=max_size, loop=app.loop, connection_class=NoResetConnection)
 
     yield
 
@@ -64,13 +72,13 @@ async def db_ctx(app: web.Application):
 
 def setup_routes(app):
     if CONNECTION_ORM:
-        app.router.add_get('/json', json)
         app.router.add_get('/db', single_database_query_orm)
         app.router.add_get('/queries/{queries:.*}', multiple_database_queries_orm)
         app.router.add_get('/fortunes', fortunes)
         app.router.add_get('/updates/{queries:.*}', updates)
-        app.router.add_get('/plaintext', plaintext)
     else:
+        app.router.add_get('/json', json)
+        app.router.add_get('/plaintext', plaintext)
         app.router.add_get('/db', single_database_query_raw)
         app.router.add_get('/queries/{queries:.*}', multiple_database_queries_raw)
         app.router.add_get('/fortunes', fortunes_raw)
@@ -79,6 +87,7 @@ def setup_routes(app):
 
 def create_app():
     app = web.Application()
-    app.cleanup_ctx.append(db_ctx)
+    if platform.python_implementation() != "PyPy":
+        app.cleanup_ctx.append(db_ctx)
     setup_routes(app)
     return app

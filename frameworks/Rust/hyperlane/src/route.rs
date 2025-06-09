@@ -1,46 +1,42 @@
-use crate::*;
+use super::*;
 
-pub async fn json(controller_data: ControllerData) {
+pub async fn json(ctx: Context) {
     let json: Value = json!({
         "message": RESPONSEDATA_STR
     });
-    let _ = controller_data
-        .set_response_body(serde_json::to_string(&json).unwrap_or_default())
+    let _ = ctx
+        .send_response(200, serde_json::to_string(&json).unwrap_or_default())
         .await;
 }
 
-pub async fn plaintext(controller_data: ControllerData) {
-    let _ = controller_data
-        .set_response_header(CONTENT_TYPE, TEXT_PLAIN)
-        .await
-        .set_response_body(RESPONSEDATA_BIN)
+pub async fn plaintext(ctx: Context) {
+    let _ = ctx.send_response(200, RESPONSEDATA_BIN).await;
+}
+
+pub async fn db(ctx: Context) {
+    let db_connection: &DbPoolConnection = get_db_connection();
+    let query_row: QueryRow = random_world_row(db_connection).await;
+    let _ = ctx
+        .send_response(200, serde_json::to_string(&query_row).unwrap_or_default())
         .await;
 }
 
-pub async fn db(controller_data: ControllerData) {
-    let db_connection: DbPoolConnection = get_db_connection().await;
-    let query_row: QueryRow = random_world_row(&db_connection).await;
-    let _ = controller_data
-        .set_response_body(serde_json::to_string(&query_row).unwrap_or_default())
-        .await;
-}
-
-pub async fn queries(controller_data: ControllerData) {
-    let queries: Queries = controller_data
+pub async fn query(ctx: Context) {
+    let queries: Queries = ctx
         .get_request_query("q")
         .await
         .and_then(|queries| queries.parse::<Queries>().ok())
         .unwrap_or_default()
         .min(ROW_LIMIT as Queries)
         .max(1);
-    let db_pool: DbPoolConnection = get_db_connection().await;
-    let data: Vec<QueryRow> = get_some_row_id(queries, &db_pool).await;
-    let _ = controller_data
-        .set_response_body(serde_json::to_string(&data).unwrap_or_default())
+    let db_pool: &DbPoolConnection = get_db_connection();
+    let data: Vec<QueryRow> = get_some_row_id(queries, db_pool).await;
+    let _ = ctx
+        .send_response(200, serde_json::to_string(&data).unwrap_or_default())
         .await;
 }
 
-pub async fn fortunes(controller_data: ControllerData) {
+pub async fn fortunes(ctx: Context) {
     let all_rows: Vec<PgRow> = all_world_row().await;
     let mut fortunes_list: Vec<Fortunes> = all_rows
         .iter()
@@ -56,15 +52,11 @@ pub async fn fortunes(controller_data: ControllerData) {
     ));
     fortunes_list.sort_by(|it, next| it.message.cmp(&next.message));
     let res: String = FortunesTemplate::new(fortunes_list).to_string();
-    controller_data
-        .set_response_header(CONTENT_TYPE, content_type_charset(TEXT_HTML, UTF8))
-        .await
-        .set_response_body(res)
-        .await;
+    let _ = ctx.send_response(200, res).await;
 }
 
-pub async fn updates(controller_data: ControllerData) {
-    let queries: Queries = controller_data
+pub async fn update(ctx: Context) {
+    let queries: Queries = ctx
         .get_request_query("q")
         .await
         .and_then(|queries| queries.parse::<Queries>().ok())
@@ -72,27 +64,21 @@ pub async fn updates(controller_data: ControllerData) {
         .min(ROW_LIMIT as Queries)
         .max(1);
     let res: Vec<QueryRow> = update_world_rows(queries).await;
-    let _ = controller_data
-        .set_response_body(serde_json::to_string(&res).unwrap_or_default())
+    let _ = ctx
+        .send_response(200, serde_json::to_string(&res).unwrap_or_default())
         .await;
 }
 
-pub async fn cached_queries(controller_data: ControllerData) {
-    let count: Queries = controller_data
+pub async fn cached_query(ctx: Context) {
+    let count: Queries = ctx
         .get_request_query("c")
         .await
         .and_then(|queries| queries.parse::<Queries>().ok())
         .unwrap_or_default()
         .min(ROW_LIMIT as Queries)
         .max(1);
-    let res: Vec<QueryRow> = CACHE
-        .get()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .take(count as usize)
-        .cloned()
-        .collect();
-    let _ = controller_data
-        .set_response_body(serde_json::to_string(&res).unwrap_or_default())
+    let res: Vec<QueryRow> = CACHE.iter().take(count as usize).cloned().collect();
+    let _ = ctx
+        .send_response(200, serde_json::to_string(&res).unwrap_or_default())
         .await;
 }
